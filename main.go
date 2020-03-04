@@ -16,6 +16,8 @@ import (
 	"github.com/amir20/dozzle/docker"
 	"github.com/gobuffalo/packr"
 	"github.com/gorilla/mux"
+	"github.com/gorilla/securecookie"
+
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -38,6 +40,88 @@ type handler struct {
 	showAll bool
 	box     packr.Box
 }
+
+// cookie handling
+
+var cookieHandler = securecookie.New(
+	securecookie.GenerateRandomKey(64),
+	securecookie.GenerateRandomKey(32))
+
+func getUserName(request *http.Request) (userName string) {
+	if cookie, err := request.Cookie("session"); err == nil {
+		cookieValue := make(map[string]string)
+		if err = cookieHandler.Decode("session", cookie.Value, &cookieValue); err == nil {
+			userName = cookieValue["name"]
+		}
+	}
+	return userName
+}
+
+func setSession(userName string, response http.ResponseWriter) {
+	value := map[string]string{
+		"name": userName,
+	}
+	if encoded, err := cookieHandler.Encode("session", value); err == nil {
+		cookie := &http.Cookie{
+			Name:  "session",
+			Value: encoded,
+			Path:  "/",
+		}
+		http.SetCookie(response, cookie)
+	}
+}
+
+func clearSession(response http.ResponseWriter) {
+	cookie := &http.Cookie{
+		Name:   "session",
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	}
+	http.SetCookie(response, cookie)
+}
+
+// login handler
+func loginHandler(response http.ResponseWriter, request *http.Request) {
+	name := request.FormValue("name")
+	pass := request.FormValue("password")
+	redirectTarget := "/index"
+	if name != "" && pass != "" {
+		// .. check credentials ..
+		if name == userName && pass == passwordSecret {
+			setSession(name, response)
+			redirectTarget = "/"
+		}
+	}
+	http.Redirect(response, request, redirectTarget, 302)
+}
+
+// logout handler
+func logoutHandler(response http.ResponseWriter, request *http.Request) {
+	clearSession(response)
+	http.Redirect(response, request, "/", 302)
+}
+
+// index login page
+const indexPage = `
+<h1 align="center">Login</h1>
+<form method="post" action="/login" align="center">
+    <label for="name">User name</label>
+	<input type="text" id="name" name="name">
+    <label for="password">Password</label>
+	<input type="password" id="password" name="password">
+	<br><br>
+    <button type="submit">Login</button>
+</form>
+`
+
+func indexPageHandler(response http.ResponseWriter, request *http.Request) {
+	fmt.Fprintf(response, indexPage)
+}
+
+// server main method
+var userName string
+var passwordSecret string
 
 func init() {
 	pflag.String("addr", ":8080", "http service address")
@@ -72,6 +156,16 @@ func init() {
 		}
 	}
 
+	if value, ok := os.LookupEnv("DOZZLE_USER"); ok {
+		log.Infof("Parsing %s", value)
+		userName = value
+	}
+
+	if value, ok := os.LookupEnv("DOZZLE_PASSWORD"); ok {
+		log.Infof("Parsing %s", value)
+		passwordSecret = value
+	}
+
 	l, _ := log.ParseLevel(level)
 	log.SetLevel(l)
 
@@ -83,6 +177,11 @@ func init() {
 
 func createRoutes(base string, h *handler) *mux.Router {
 	r := mux.NewRouter()
+
+	r.HandleFunc("/index", indexPageHandler)
+	r.HandleFunc("/login", loginHandler).Methods("POST")
+	r.HandleFunc("/logout", logoutHandler).Methods("GET")
+
 	if base != "/" {
 		r.HandleFunc(base, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			http.Redirect(w, req, base+"/", http.StatusMovedPermanently)
@@ -134,6 +233,11 @@ func main() {
 }
 
 func (h *handler) index(w http.ResponseWriter, req *http.Request) {
+	userName := getUserName(req)
+	if userName == "" {
+		http.Redirect(w, req, "/index", 302)
+	}
+
 	fileServer := http.FileServer(h.box)
 	if h.box.Has(req.URL.Path) && req.URL.Path != "" && req.URL.Path != "/" {
 		fileServer.ServeHTTP(w, req)

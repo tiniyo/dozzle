@@ -53,6 +53,12 @@
         </b-dropdown>
       </div>
     </section>
+    <section class="section">
+      <div class="has-underline">
+        <h2 class="title is-4">Logout User</h2>
+      </div>
+      <a href="/logout">Logout</a>
+    </section>
   </div>
 </template>
 

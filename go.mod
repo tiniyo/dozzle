@@ -26,6 +26,7 @@ require (
 	github.com/golang/protobuf v1.3.4 // indirect
 	github.com/google/go-cmp v0.3.1 // indirect
 	github.com/gorilla/mux v1.7.4
+	github.com/gorilla/securecookie v1.1.1
 	github.com/magiconair/properties v1.8.1
 	github.com/morikuni/aec v0.0.0-20170113033406-39771216ff4c // indirect
 	github.com/opencontainers/go-digest v1.0.0-rc1 // indirect
